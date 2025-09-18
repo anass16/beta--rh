@@ -1,5 +1,6 @@
 import { Absence } from '../types/pro-analytics';
 import { isHoliday } from '../utils/holidayManager';
+import { getCustomAbsenceTypes } from './absenceTypeManager';
 
 const ABSENCE_VERSION_KEY = 'hr_absence_version';
 const ABSENCE_DATA_KEY_PREFIX = 'hr_absences';
@@ -7,16 +8,66 @@ const ABSENCE_DATA_KEY_PREFIX = 'hr_absences';
 // Use BroadcastChannel for reliable cross-component communication on data changes.
 const channel = new BroadcastChannel('absences-update');
 
-const ABSENCE_REASON_MAP: { [key: string]: string } = {
-  "A": "ABSENT",
-  "ABS": "ABSENT",
-  "ABSENT": "ABSENT",
-  "1": "ABSENT",
-  "SICK": "SICK",
-  "LEAVE": "LEAVE",
-  "UNPAID": "UNPAID",
-  "AN": "ABSENT",
+const STATIC_ABSENCE_REASON_MAP: { [key: string]: string } = {
+  // Unjustified Absence
+  "A": "UNJUSTIFIED_ABSENCE", "ABS": "UNJUSTIFIED_ABSENCE", "ABSENT": "UNJUSTIFIED_ABSENCE",
+  "1": "UNJUSTIFIED_ABSENCE", "AN": "UNJUSTIFIED_ABSENCE", "ABSENCE INJUSTIFIÉE": "UNJUSTIFIED_ABSENCE",
+  "UNJUSTIFIED ABSENCE": "UNJUSTIFIED_ABSENCE", "UNJUSTIFIED_ABSENCE": "UNJUSTIFIED_ABSENCE",
+  // Sick Leave
+  "SICK": "SICK_LEAVE", "MALADIE": "SICK_LEAVE", "CONGÉ MALADIE": "SICK_LEAVE",
+  "SICK LEAVE": "SICK_LEAVE", "SICK_LEAVE": "SICK_LEAVE",
+  // Annual Leave / Paid Leave
+  "LEAVE": "ANNUAL_LEAVE", "CONGÉ PAYÉ": "ANNUAL_LEAVE", "CONGE PAYE": "ANNUAL_LEAVE",
+  "PAID LEAVE": "ANNUAL_LEAVE", "ANNUAL LEAVE": "ANNUAL_LEAVE", "CONGÉ ANNUEL": "ANNUAL_LEAVE",
+  "ANNUAL_LEAVE": "ANNUAL_LEAVE",
+  // Unpaid Leave
+  "UNPAID": "UNPAID_LEAVE", "CONGÉ SANS SOLDE": "UNPAID_LEAVE", "UNPAID LEAVE": "UNPAID_LEAVE",
+  "UNPAID_LEAVE": "UNPAID_LEAVE",
+  // Exceptional Leave
+  "CONGÉ EXCEPTIONNEL": "EXCEPTIONAL_LEAVE", "EXCEPTIONAL LEAVE": "EXCEPTIONAL_LEAVE",
+  "EXCEPTIONAL_LEAVE": "EXCEPTIONAL_LEAVE",
+  // Maternity/Paternity Leave
+  "CONGÉ MATERNITÉ": "MATERNITY_PATERNITY_LEAVE", "CONGÉ PATERNITÉ": "MATERNITY_PATERNITY_LEAVE",
+  "MATERNITY LEAVE": "MATERNITY_PATERNITY_LEAVE", "PATERNITY LEAVE": "MATERNITY_PATERNITY_LEAVE",
+  "MATERNITY_PATERNITY_LEAVE": "MATERNITY_PATERNITY_LEAVE",
+  // Parental Leave
+  "CONGÉ PARENTAL": "PARENTAL_LEAVE", "PARENTAL LEAVE": "PARENTAL_LEAVE", "PARENTAL_LEAVE": "PARENTAL_LEAVE",
+  // Work Accident
+  "ACCIDENT DE TRAVAIL": "WORK_ACCIDENT", "WORK ACCIDENT": "WORK_ACCIDENT", "WORK_ACCIDENT": "WORK_ACCIDENT",
+  // Unjustified Lateness
+  "RETARD NON JUSTIFIÉ": "UNJUSTIFIED_LATENESS", "UNJUSTIFIED LATENESS": "UNJUSTIFIED_LATENESS",
+  "UNJUSTIFIED_LATENESS": "UNJUSTIFIED_LATENESS",
+  // Unjustified Early Departure
+  "DÉPART ANTICIPé": "UNJUSTIFIED_EARLY_DEPARTURE", "DEPART ANTICIPE": "UNJUSTIFIED_EARLY_DEPARTURE",
+  "EARLY DEPARTURE": "UNJUSTIFIED_EARLY_DEPARTURE", "UNJUSTIFIED_EARLY_DEPARTURE": "UNJUSTIFIED_EARLY_DEPARTURE",
+  // Professional Mission
+  "MISSION": "PROFESSIONAL_MISSION", "MISSION PROFESSIONNELLE": "PROFESSIONAL_MISSION",
+  "PROFESSIONAL MISSION": "PROFESSIONAL_MISSION", "PROFESSIONAL_MISSION": "PROFESSIONAL_MISSION",
+  // Training
+  "FORMATION": "TRAINING", "STAGE": "TRAINING", "TRAINING": "TRAINING", "INTERNSHIP": "TRAINING",
+  // Military Service
+  "SERVICE MILITAIRE": "MILITARY_SERVICE", "MILITARY SERVICE": "MILITARY_SERVICE", "MILITARY_SERVICE": "MILITARY_SERVICE",
+  // Strike
+  "GRÈVE": "STRIKE", "GREVE": "STRIKE", "STRIKE": "STRIKE",
+  // Authorized Absence
+  "AUTORISATION D'ABSENCE": "AUTHORIZED_ABSENCE", "AUTHORIZED ABSENCE": "AUTHORIZED_ABSENCE",
+  "AUTHORIZED_ABSENCE": "AUTHORIZED_ABSENCE",
+  // Sabbatical Leave
+  "CONGÉ SABBATIQUE": "SABBATICAL_LEAVE", "SABBATICAL LEAVE": "SABBATICAL_LEAVE", "SABBATICAL_LEAVE": "SABBATICAL_LEAVE",
+  // Adoption Leave
+  "CONGÉ POUR ADOPTION": "ADOPTION_LEAVE", "ADOPTION LEAVE": "ADOPTION_LEAVE", "ADOPTION_LEAVE": "ADOPTION_LEAVE"
 };
+
+function getDynamicAbsenceReasonMap(): { [key: string]: string } {
+    const customTypes = getCustomAbsenceTypes();
+    const dynamicMap: { [key: string]: string } = {};
+    customTypes.forEach(type => {
+        dynamicMap[type.label.toUpperCase()] = type.reasonCode;
+        dynamicMap[type.reasonCode] = type.reasonCode; // Map code to itself
+    });
+    return { ...STATIC_ABSENCE_REASON_MAP, ...dynamicMap };
+}
+
 
 // --- Version Management ---
 
@@ -78,10 +129,11 @@ export function importAbsencesFromFile(records: Record<string, any>[], uploadId:
   const now = new Date().toISOString();
   
   const absencesByMonth = new Map<string, Absence[]>();
+  const reasonMap = getDynamicAbsenceReasonMap();
 
   records.forEach(rec => {
-    const reasonKey = String(rec['Absence'] || '').toUpperCase();
-    const reasonCode = ABSENCE_REASON_MAP[reasonKey];
+    const reasonKey = String(rec['Absence'] || '').toUpperCase().trim();
+    const reasonCode = reasonMap[reasonKey];
     const dateStr = String(rec['Date'] || '');
     
     if (!reasonCode || !dateStr || !rec['Matricule.']) return;

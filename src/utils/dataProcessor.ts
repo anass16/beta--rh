@@ -157,13 +157,27 @@ export const linkAttendanceData = (
     if (employee) {
       summary.matchedRows++;
       
-      const punchDateTime = record['Punch'] || record['Date'];
+      const rawDate = record['Date']; // Should be YYYY-MM-DD
+      const rawTime = record['Punch']; // Should be HH:mm or HH:mm:ss
+
+      let combinedDateTime: string;
+      if (rawDate && rawTime && /^\d{2}:\d{2}/.test(String(rawTime))) {
+          // We have both date and time, create a full ISO-like string
+          combinedDateTime = `${rawDate}T${rawTime}`;
+      } else if (rawDate) {
+          // Only have a date, use it. This might be a record with only hours, not specific punches.
+          // The analytics engine will use the rawHours if available.
+          combinedDateTime = rawDate;
+      } else {
+          // Fallback, should not happen for matched rows
+          combinedDateTime = new Date().toISOString();
+      }
       
       const newAttendanceRecord: AttendanceRecord = {
         employeeId: employee.matricule,
         employeeName: `${employee.firstName} ${employee.lastName}`,
         department: employee.department,
-        punchDateTime: String(punchDateTime || new Date().toISOString()),
+        punchDateTime: combinedDateTime,
         punchType: String(record['Punch'] || '').toUpperCase().includes('OUT') ? 'OUT' : 'IN',
         note: String(record['Note.'] || ''),
         operation: String(record['Opération.'] || ''),

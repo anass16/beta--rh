@@ -3,16 +3,23 @@ import { Absence } from '../../types/pro-analytics';
 import { useI18n } from '../../contexts/I18nContext';
 import { format, parseISO } from 'date-fns';
 import { CalendarDays, Edit, Trash2 } from 'lucide-react';
+import { AbsenceTypeOption } from '../../hooks/useAbsenceTypes';
 
 interface AbsenceListProps {
   absences: Absence[];
+  allAbsenceTypes: AbsenceTypeOption[];
   isLoading: boolean;
   onEdit: (absence: Absence) => void;
   onDelete: (id: string) => void;
 }
 
-const AbsenceList: React.FC<AbsenceListProps> = ({ absences, isLoading, onEdit, onDelete }) => {
+const AbsenceList: React.FC<AbsenceListProps> = ({ absences, allAbsenceTypes, isLoading, onEdit, onDelete }) => {
   const { t } = useI18n();
+
+  const getAbsenceLabel = (reasonCode: string): string => {
+    const type = allAbsenceTypes.find(t => t.code === reasonCode);
+    return type ? type.label : reasonCode;
+  };
 
   if (isLoading) {
     return (
@@ -42,7 +49,7 @@ const AbsenceList: React.FC<AbsenceListProps> = ({ absences, isLoading, onEdit, 
               <div className="flex items-center space-x-2">
                 <span className="font-semibold text-gray-800">{format(parseISO(absence.date), 'EEE, dd MMM yyyy')}</span>
                 <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${absence.source === 'FILE' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                  {t(`absence.reason.${absence.reasonCode}` as any, absence.reasonCode)}
+                  {getAbsenceLabel(absence.reasonCode)}
                 </span>
               </div>
               {absence.note && <p className="text-sm text-gray-500 mt-1 italic truncate">"{absence.note}"</p>}

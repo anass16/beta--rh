@@ -2,6 +2,15 @@ import { Employee } from './index';
 
 export type DayStatus = 'OnTime' | 'MinorDelay' | 'Late' | 'Absent' | 'Worked' | 'Holiday' | 'WorkedOnHoliday' | 'Weekend';
 
+export type AbsenceCategory = 'JUSTIFIED' | 'UNJUSTIFIED' | 'WORK_RELATED' | 'SPECIAL';
+
+export interface CustomAbsenceType {
+  reasonCode: string; // e.g., CUSTOM_ANNUAL_LEAVE_1678886400000
+  label: string;
+  description?: string;
+  category: AbsenceCategory;
+}
+
 export interface Absence {
   id: string; // UUID
   matricule: string;

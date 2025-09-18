@@ -13,7 +13,6 @@ import { saveEmployees, getEmployees, addImportRecord, getImportHistory, clearEm
 import { analyzeAndCorrectFile } from './utils/fileCorrector';
 import { downloadCSV } from './utils/csvDownloader';
 import * as XLSX from 'xlsx';
-import Papa from 'papaparse';
 import { useI18n } from './contexts/I18nContext';
 import AlertsHeaderIcon from './components/alerts/AlertsHeaderIcon';
 import { invalidateCache } from './services/absenceManager';
@@ -32,9 +31,8 @@ function App() {
   const [lastUploadReports, setLastUploadReports] = useState<{ suggestions?: any[][], conflicts?: any[][], unmatched_attendance?: any[][] }>({});
   
   const forceUIRefresh = useCallback(() => {
-    // This key change will force hooks that depend on it to re-run
-    invalidateCache(); // This will bump the version, forcing caches to invalidate
-    setEmployees(getEmployees()); // Re-fetch from primary storage
+    invalidateCache();
+    setEmployees(getEmployees());
   }, []);
 
 
@@ -43,37 +41,40 @@ function App() {
     setImportHistory(getImportHistory());
   }, []);
 
-  const handleFileProcessed = async (file: File) => {
+  const handleFileProcessed = async (file: File): Promise<UploadSummary> => {
     setLastUploadReports({});
-    let rawData: any[][] = [];
     const startTime = performance.now();
     const uploadId = `upload_${Date.now()}`;
 
+    let rawData: any[][];
     try {
-      if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv')) {
-        const text = await file.text();
-        const result = Papa.parse(text, { header: false, skipEmptyLines: true });
-        if (result.errors.length) throw new Error(`CSV parsing error: ${result.errors[0].message}`);
-        rawData = result.data as any[][];
-      } else {
-        const arrayBuffer = await file.arrayBuffer();
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        if (!workbook.SheetNames || workbook.SheetNames.length === 0) throw new Error('Excel file has no sheets.');
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) || [];
-      }
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) throw new Error("The file does not contain any sheets.");
+        
+        const worksheet = workbook.Sheets[sheetName];
+        rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
 
-      if (!Array.isArray(rawData)) {
-        throw new Error("Parsed file data is not a valid array of rows. The file might be corrupt or in an unsupported format.");
-      }
+        if (!Array.isArray(rawData) || rawData.filter(r => Array.isArray(r) && r.length > 0 && r.some(c => c !== '')).length === 0) {
+            throw new Error("The selected sheet is empty or invalid.");
+        }
+    } catch (e) {
+        const message = e instanceof Error ? e.message : "An unknown error occurred during file parsing.";
+        throw new Error(`File Read Error: ${message}`);
+    }
 
-      const { report, standardizedRecords, quarantinedRows } = analyzeAndCorrectFile(rawData);
-      
-      let finalSummary: UploadSummary;
-      let updatedEmployees: Employee[];
-      const reportsToSave: { suggestions?: any[][], conflicts?: any[][], unmatched_attendance?: any[][] } = {};
+    const { report, standardizedRecords, quarantinedRows } = analyzeAndCorrectFile(rawData);
+    
+    if (report.detected_format === 'unknown') {
+        throw new Error(`File format not recognized. Please ensure it's a valid attendance or personnel file with a 'Matricule' column.`);
+    }
 
-      if (report.detected_format === 'attendance') {
+    let finalSummary: UploadSummary;
+    let updatedEmployees: Employee[];
+    const reportsToSave: { suggestions?: any[][], conflicts?: any[][], unmatched_attendance?: any[][] } = {};
+
+    if (report.detected_format === 'attendance') {
         const { employees: linkedEmployees, summary: linkSummary, unmatchedRows } = linkAttendanceData(
             getEmployees(),
             standardizedRecords,
@@ -91,7 +92,7 @@ function App() {
         if (unmatchedRows.length > 1) {
             reportsToSave.unmatched_attendance = unmatchedRows;
         }
-      } else { // Payroll or Personnel
+    } else { // Payroll or Personnel
         const { employees: upsertedEmployees, summary: upsertSummary, conflicts } = upsertEmployeeData(
             getEmployees(),
             standardizedRecords,
@@ -108,33 +109,31 @@ function App() {
         if (conflicts.length > 1) {
             reportsToSave.conflicts = conflicts;
         }
-      }
-
-      saveEmployees(updatedEmployees);
-
-      const endTime = performance.now();
-      const importRecord: ImportHistory = {
-        id: uploadId,
-        fileName: file.name,
-        fileType: report.detected_format || 'unknown',
-        uploadDate: new Date().toISOString(),
-        summary: {...finalSummary, recomputeMs: Math.round(endTime - startTime) }
-      };
-      
-      addImportRecord(importRecord);
-      setImportHistory(getImportHistory());
-
-      if (quarantinedRows.length > 0) {
-        const suggestions = [['Quarantined Row Data', 'Suggested Matricule', 'Suggested Name']];
-        quarantinedRows.forEach(row => suggestions.push([row.join(' | ')]));
-        reportsToSave.suggestions = suggestions;
-      }
-      setLastUploadReports(reportsToSave);
-      forceUIRefresh();
-
-    } catch (error) {
-       throw error;
     }
+
+    saveEmployees(updatedEmployees);
+
+    const endTime = performance.now();
+    const importRecord: ImportHistory = {
+      id: uploadId,
+      fileName: file.name,
+      fileType: report.detected_format || 'unknown',
+      uploadDate: new Date().toISOString(),
+      summary: {...finalSummary, recomputeMs: Math.round(endTime - startTime) }
+    };
+    
+    addImportRecord(importRecord);
+    setImportHistory(getImportHistory());
+
+    if (quarantinedRows.length > 0) {
+      const suggestions = [['Quarantined Row Data', 'Reason']];
+      quarantinedRows.forEach(row => suggestions.push([row.join(' | '), 'Missing or invalid Matricule']));
+      reportsToSave.suggestions = suggestions;
+    }
+    setLastUploadReports(reportsToSave);
+    forceUIRefresh();
+
+    return importRecord.summary;
   };
 
   const handleEmployeeClick = (employee: Employee) => {

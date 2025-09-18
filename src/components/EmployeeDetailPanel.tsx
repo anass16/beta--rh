@@ -7,13 +7,14 @@ import { useI18n } from '../contexts/I18nContext';
 import { useAbsenceCache } from '../hooks/useAbsenceCache';
 import AbsenceList from './absences/AbsenceList';
 import AbsenceFormModal from './absences/AbsenceFormModal';
-import { addAbsence, updateAbsence, deleteAbsence, invalidateCache } from '../services/absenceManager';
+import { addAbsence, updateAbsence, deleteAbsence } from '../services/absenceManager';
+import { useAbsenceTypes } from '../hooks/useAbsenceTypes';
 
 interface EmployeeDetailPanelProps {
   employee: Employee | null;
   isOpen: boolean;
   onClose: () => void;
-  onDataChanged: () => void; // This is kept for now for other potential data changes
+  onDataChanged: () => void;
 }
 
 const KPICard: React.FC<{ label: string; value: string | number; icon: React.ReactNode; unit?: string }> = ({ label, value, icon, unit }) => (
@@ -51,13 +52,15 @@ const EmployeeDetailPanel: React.FC<EmployeeDetailPanelProps> = ({ employee, isO
     matricule: employee?.matricule,
     enabled: isOpen && !!employee,
   });
+  
+  const { allTypes: allAbsenceTypes } = useAbsenceTypes();
 
   useEffect(() => {
     if (isOpen && employee && !isAbsenceLoading) {
       const data = computeUserMonthlyKpi(employee, today.getFullYear(), today.getMonth(), absenceData, false, false);
       setKpiData(data);
     }
-  }, [isOpen, employee, absenceData, isAbsenceLoading, today, cacheKey]); // Added cacheKey dependency
+  }, [isOpen, employee, absenceData, isAbsenceLoading, today, cacheKey]);
 
   const handleOpenAddAbsence = () => {
     setEditingAbsence(null);
@@ -90,7 +93,6 @@ const EmployeeDetailPanel: React.FC<EmployeeDetailPanelProps> = ({ employee, isO
         // Invalidation is handled by deleteAbsence itself.
     }
   };
-
 
   if (!isOpen) return null;
   const isLoading = !employee || isAbsenceLoading;
@@ -142,7 +144,8 @@ const EmployeeDetailPanel: React.FC<EmployeeDetailPanelProps> = ({ employee, isO
                     </button>
                 </div>
                 <AbsenceList 
-                    absences={absenceData} 
+                    absences={absenceData}
+                    allAbsenceTypes={allAbsenceTypes}
                     isLoading={isLoading}
                     onEdit={handleOpenEditAbsence}
                     onDelete={handleDeleteAbsence}
